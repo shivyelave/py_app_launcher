@@ -1,10 +1,70 @@
 #!/bin/bash
 
 # -------------------- USER INPUTS ---------------------
-project_name="IC4-RegistrationPortal-API-dev"         # e.g., myapp
-project_path="https://github.com/GathiAnalytics/IC4-RegistrationPortal-API.git"         # Git URL or local path
-ssh_host=""             # e.g., user@1.2.3.4 OR empty for local
-main_file=""            # Optional: file to run for Flask/Streamlit
+usage() {
+  echo "Usage: $0 --project_name <project_name> --project_path <project_path> [--ssh_host <ssh_host>] [--main_file <main_file>] [--branch_name <branch_name>]"
+  echo ""
+  echo "Parameters:"
+  echo "  --project_name    Name of the project. Mandatory."
+  echo "  --project_path    Path to project code or Git URL. Mandatory."
+  echo "  --ssh_host        SSH host for remote deployment. Optional."
+  echo "  --main_file       Main file to run the app. Optional for some app types."
+  echo "  --branch_name     Git branch name (default: main). Optional."
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help)
+      usage
+      exit 0
+      ;;
+    --project_name)
+      project_name="$2"
+      shift 2
+      ;;
+    --project_path)
+      project_path="$2"
+      shift 2
+      ;;
+    --ssh_host)
+      ssh_host="$2"
+      shift 2
+      ;;
+    --main_file)
+      main_file="$2"
+      shift 2
+      ;;
+    --branch_name)
+      branch_name="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown parameter: $1"
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+# Validate mandatory parameters
+if [ -z "$project_name" ]; then
+  echo "Error: --project_name is mandatory."
+  usage
+  exit 1
+fi
+
+if [ -z "$project_path" ]; then
+  echo "Error: --project_path is mandatory."
+  usage
+  exit 1
+fi
+
+# Fallback defaults if parameters are not provided
+: "${project_name:=}"
+: "${project_path:=}"
+: "${ssh_host:=}"
+: "${main_file:=}"
+: "${branch_name:=main}"
 
 # ------------------- HELPER FUNCS ---------------------
 log() { echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"; }
@@ -35,12 +95,18 @@ cd "$project_name" || fail "Cannot enter project directory"
 
 # ----------------- GET PROJECT CODE -------------------
 if is_git_url; then
-  log "🔄 Cloning from Git: $project_path"
-  git clone "$project_path" . || fail "Git clone failed"
+  if [ -n "$branch_name" ]; then
+    log "🔄 Cloning from Git: $project_path (branch: $branch_name)"
+    git clone "$project_path" -b "$branch_name" . || fail "Git clone failed"
+  else
+    log "🔄 Cloning from Git: $project_path"
+    git clone "$project_path" . || fail "Git clone failed"
+  fi
 else
   log "📁 Copying files from local path: $project_path"
   cp -r "$project_path"/* . || fail "Copy failed"
 fi
+
 
 # ------------- CREATE & ACTIVATE VENV -----------------
 # ----------- OS DETECTION (Linux, Mac, Windows) -------------
@@ -101,15 +167,23 @@ fi
 # ------------------- RUN APP --------------------------
 log "🚀 Starting $app_type app..."
 
+# Determine host binding based on ssh_host parameter
+if [ -n "$ssh_host" ]; then
+  HOST="0.0.0.0"
+else
+  HOST="127.0.0.1"
+fi
+
+# Run the application based on the detected app type
 case "$app_type" in
   streamlit)
-    streamlit run "$main_file"  --server.address 0.0.0.0 --server.port 8501|| fail "Streamlit failed to start"
+    streamlit run "$main_file" --server.address "$HOST" --server.port 8501 || fail "Streamlit failed to start"
     ;;
   flask)
     export FLASK_APP="$main_file"
-    flask run --host=0.0.0.0 --port=5000 || fail "Flask failed to start"
+    flask run --host="$HOST" --port=5000 || fail "Flask failed to start"
     ;;
   django)
-    python manage.py runserver 0.0.0.0:8000 || fail "Django failed to start"
+    python manage.py runserver "$HOST":8000 || fail "Django failed to start"
     ;;
 esac
