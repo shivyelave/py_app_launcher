@@ -164,6 +164,20 @@ else
   fail "❌ Unable to detect app type or missing main file."
 fi
 
+#-------------------Migrations---------------------
+log "🔄 Checking for migrations..."
+if [ "$app_type" = "django" ]; then
+  log "🔄 Applying Django migrations..."
+  python manage.py migrate || fail "Django migrations failed"
+elif [ "$app_type" = "flask" ]; then
+  if [ -d "migrations" ]; then
+    log "🔄 Applying Flask migrations..."
+    flask db upgrade || fail "Flask migrations failed"
+  else
+    log "⚠️ No migration directory found for Flask. Skipping migrations."
+  fi
+fi
+
 # ------------------- RUN APP --------------------------
 log "🚀 Starting $app_type app..."
 
